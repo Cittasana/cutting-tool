@@ -70,3 +70,27 @@ export async function resolveAnthropicKey(
   }
   return tenantKey;
 }
+
+export async function resolveHiggsfieldCredentials(projectId: string): Promise<string> {
+  const projectKey = await getProjectSecret(projectId, "higgsfield");
+  if (projectKey) return projectKey;
+  const envKey = process.env.HF_CREDENTIALS;
+  if (!envKey) {
+    throw new Error(
+      "No Higgsfield credentials configured. Set HF_CREDENTIALS at platform level or per project (KEY_ID:KEY_SECRET).",
+    );
+  }
+  return envKey;
+}
+
+export async function resolveElevenLabsKey(projectId: string): Promise<string> {
+  const projectKey = await getProjectSecret(projectId, "elevenlabs");
+  if (projectKey) return projectKey;
+  const envKey = process.env.ELEVENLABS_API_KEY;
+  if (!envKey) {
+    throw new Error(
+      "No ElevenLabs key configured. Set per-project (recommended for client voices) or platform-level ELEVENLABS_API_KEY.",
+    );
+  }
+  return envKey;
+}

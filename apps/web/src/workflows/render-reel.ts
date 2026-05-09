@@ -1,14 +1,32 @@
-import { sleep } from "workflow";
 import {
   generateBrief,
   generateStoryboard,
   scrape,
   type MarketingBrief,
   type ProductContext,
+  type Scene,
   type Storyboard,
 } from "@cutting-tool/core";
-import { resolveAnthropicKey } from "@/lib/supabase/admin";
+import {
+  resolveAnthropicKey,
+  resolveElevenLabsKey,
+  resolveHiggsfieldCredentials,
+} from "@/lib/supabase/admin";
 import { recordJobEvent, updateJobStatus } from "@/lib/jobs";
+import { createRenderSandbox } from "@/runners/sandbox";
+import {
+  downloadIntoSandbox,
+  extractLastFrame,
+  generateScene,
+} from "@/runners/higgsfield";
+import { synthesizeVoiceover } from "@/runners/elevenlabs";
+import {
+  concatDemuxer,
+  ensureSilentAudio,
+  muxVoiceover,
+  normalizeForConcat,
+} from "@/runners/ffmpeg-sandbox";
+import { uploadReelToBlob } from "@/runners/blob";
 
 export interface RenderReelInput {
   jobId: string;
@@ -17,15 +35,9 @@ export interface RenderReelInput {
   url: string;
   language: "de" | "en";
   length_seconds: 30 | 60;
+  voiceId?: string;
 }
 
-/**
- * Top-level workflow for rendering a Reel from a product URL.
- *
- * Phase 1 etappe 2 — currently implements brief + storyboard as durable steps.
- * Stages 3..7 (scene generation in Sandbox, ElevenLabs TTS, render, eval, post)
- * are stubs we'll fill in subsequent commits.
- */
 export async function renderReel(input: RenderReelInput) {
   "use workflow";
 
@@ -34,26 +46,29 @@ export async function renderReel(input: RenderReelInput) {
   const ctx = await scrapeStep(input.jobId, input.url);
   const brief = await briefStep(input, ctx);
   const storyboard = await storyboardStep(input, brief);
-
   await markStorybardReady(input.jobId, brief, storyboard);
 
-  // TODO Stage 3 — generateScenes(input, storyboard)  (Vercel Sandbox + Higgsfield CLI)
-  // TODO Stage 4 — synthesizeVoiceovers(input, storyboard)
-  // TODO Stage 5 — renderFinal(input, scenes)         (Vercel Sandbox + ffmpeg)
-  // TODO Stage 6 — evaluateFinal(input, reel)
-  // TODO Stage 7 — postToInstagram(input, reel)        (when project.auto_post_enabled)
+  // Pre-synthesize all voiceovers in parallel (Veo silent scenes only).
+  const voiceovers = await synthesizeVoiceoversStep(input, storyboard);
 
-  await markPaused(input.jobId);
-  return { brief, storyboard };
+  // Render all scenes in one Sandbox (create → install → per-scene generate
+  // → mux VO → normalize → concat → upload to Blob).
+  const reelUrl = await renderInSandboxStep(input, storyboard, voiceovers);
+
+  await markDone(input.jobId, reelUrl);
+  return { reelUrl };
 }
 
+// ============================================================
+// Steps
+// ============================================================
 async function markStarted(jobId: string) {
   "use step";
   await updateJobStatus(jobId, { status: "planning", current_step: "scrape", progress: 5 });
   await recordJobEvent(jobId, "step.started", { step: "scrape" });
 }
 
-async function scrapeStep(jobId: string, url: string) {
+async function scrapeStep(jobId: string, url: string): Promise<ProductContext> {
   "use step";
   const ctx = await scrape(url);
   await recordJobEvent(jobId, "step.finished", {
@@ -71,11 +86,7 @@ async function briefStep(
   "use step";
   await updateJobStatus(input.jobId, { current_step: "brief", progress: 15 });
   const apiKey = await resolveAnthropicKey(input.tenantId, input.projectId);
-  const brief = await generateBrief({
-    apiKey,
-    ctx,
-    length_seconds: input.length_seconds,
-  });
+  const brief = await generateBrief({ apiKey, ctx, length_seconds: input.length_seconds });
   brief.language = input.language;
   await recordJobEvent(input.jobId, "agent.thought", {
     step: "brief",
@@ -92,11 +103,7 @@ async function storyboardStep(
   "use step";
   await updateJobStatus(input.jobId, { current_step: "storyboard", progress: 30 });
   const apiKey = await resolveAnthropicKey(input.tenantId, input.projectId);
-  const sb = await generateStoryboard({
-    apiKey,
-    brief,
-    length_seconds: input.length_seconds,
-  });
+  const sb = await generateStoryboard({ apiKey, brief, length_seconds: input.length_seconds });
   await recordJobEvent(input.jobId, "agent.thought", {
     step: "storyboard",
     scene_count: sb.scenes.length,
@@ -115,19 +122,155 @@ async function markStorybardReady(
     brief,
     storyboard,
     progress: 40,
-    current_step: "storyboard-ready",
+    current_step: "voiceovers",
   });
 }
 
-async function markPaused(jobId: string) {
+interface VoiceoverEntry {
+  sceneIndex: number;
+  base64: string;          // mp3, base64-encoded so it's serialisable
+}
+
+async function synthesizeVoiceoversStep(
+  input: RenderReelInput,
+  storyboard: Storyboard,
+): Promise<VoiceoverEntry[]> {
+  "use step";
+  const veoScenes = storyboard.scenes.filter(
+    (s) => !s.uses_native_audio && s.voiceover_text.trim().length > 0,
+  );
+  if (veoScenes.length === 0) return [];
+
+  const apiKey = await resolveElevenLabsKey(input.projectId);
+  const voiceId = input.voiceId ?? "21m00Tcm4TlvDq8ikWAM"; // ElevenLabs Rachel default
+  const audios = await Promise.all(
+    veoScenes.map(async (s) => {
+      const buf = await synthesizeVoiceover({
+        apiKey,
+        voiceId,
+        text: s.voiceover_text,
+      });
+      return { sceneIndex: s.index, base64: buf.toString("base64") };
+    }),
+  );
+
+  await recordJobEvent(input.jobId, "step.finished", {
+    step: "voiceovers",
+    count: audios.length,
+  });
+  return audios;
+}
+
+async function renderInSandboxStep(
+  input: RenderReelInput,
+  storyboard: Storyboard,
+  voiceovers: VoiceoverEntry[],
+): Promise<string> {
+  "use step";
+  await updateJobStatus(input.jobId, {
+    status: "rendering",
+    current_step: "sandbox-spawn",
+    progress: 45,
+  });
+
+  const hfCredentials = await resolveHiggsfieldCredentials(input.projectId);
+  const handle = await createRenderSandbox({
+    timeoutMinutes: 30,
+    vcpus: 4,
+  });
+  const { sandbox } = handle;
+
+  try {
+    // Stage VO files inside sandbox.
+    if (voiceovers.length > 0) {
+      await sandbox.writeFiles(
+        voiceovers.map((vo) => ({
+          path: `vo-${vo.sceneIndex}.mp3`,
+          content: Buffer.from(vo.base64, "base64"),
+        })),
+      );
+    }
+
+    let prevLastFrame: string | undefined;
+    const finalScenePaths: string[] = [];
+
+    for (const scene of storyboard.scenes) {
+      const sceneNum = scene.index;
+      await updateJobStatus(input.jobId, {
+        current_step: `scene ${sceneNum}/${storyboard.scenes.length}`,
+        progress: 45 + Math.floor((sceneNum / storyboard.scenes.length) * 40),
+      });
+      await recordJobEvent(input.jobId, "step.started", { step: `scene-${sceneNum}` });
+
+      const rawPath = `scene-${sceneNum}.raw.mp4`;
+      const { url, jobId } = await generateScene({
+        sandbox,
+        scene,
+        hfCredentials,
+        prevLastFramePath: scene.chain_from_previous ? prevLastFrame : undefined,
+        outputPath: rawPath,
+      });
+      await downloadIntoSandbox(sandbox, url, rawPath);
+      await recordJobEvent(input.jobId, "scene.preview", {
+        scene: sceneNum,
+        higgsfield_job: jobId,
+        url,
+      });
+
+      // Chain frame for next scene
+      const lastFrame = `scene-${sceneNum}.last.png`;
+      await extractLastFrame(sandbox, rawPath, lastFrame);
+      prevLastFrame = lastFrame;
+
+      // Mux voiceover (Veo silent scenes) or pass-through (Seedance native audio)
+      const muxedPath = `scene-${sceneNum}.muxed.mp4`;
+      const vo = voiceovers.find((v) => v.sceneIndex === sceneNum);
+      if (vo) {
+        await muxVoiceover(sandbox, rawPath, `vo-${sceneNum}.mp3`, muxedPath);
+      } else if (scene.uses_native_audio) {
+        // Seedance — keep native audio
+        await sandbox.runCommand("cp", [rawPath, muxedPath]);
+      } else {
+        // Defensive: silent track
+        await ensureSilentAudio(sandbox, rawPath, muxedPath);
+      }
+
+      // Normalize for concat
+      const normPath = `scene-${sceneNum}.norm.mp4`;
+      await normalizeForConcat(sandbox, muxedPath, normPath);
+      finalScenePaths.push(normPath);
+
+      await recordJobEvent(input.jobId, "step.finished", { step: `scene-${sceneNum}` });
+    }
+
+    await updateJobStatus(input.jobId, {
+      current_step: "concat",
+      progress: 88,
+    });
+    const reelPath = `reel.mp4`;
+    await concatDemuxer(sandbox, finalScenePaths, reelPath, ".");
+
+    await updateJobStatus(input.jobId, {
+      current_step: "upload",
+      progress: 94,
+    });
+    const buffer = await sandbox.readFileToBuffer({ path: reelPath });
+    if (!buffer) throw new Error("readFileToBuffer returned empty");
+
+    const blobUrl = await uploadReelToBlob({ jobId: input.jobId, buffer });
+    return blobUrl;
+  } finally {
+    await handle.stop();
+  }
+}
+
+async function markDone(jobId: string, reelUrl: string) {
   "use step";
   await updateJobStatus(jobId, {
     status: "done",
-    current_step: "phase-1-etappe-2 stops here (next: scene generation)",
+    current_step: "done",
     progress: 100,
     finished_at: new Date().toISOString(),
   });
-  // For now we mark "done" so the UI shows a final state. Once stages 3..7
-  // land we'll keep the job in "rendering"/"posting" states.
-  await sleep("0s");
+  await recordJobEvent(jobId, "step.finished", { step: "render", reel_url: reelUrl });
 }

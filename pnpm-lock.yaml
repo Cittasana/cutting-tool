@@ -50,6 +50,9 @@ importers:
       '@cutting-tool/core':
         specifier: workspace:*
         version: link:../../packages/core
+      '@elevenlabs/elevenlabs-js':
+        specifier: ^2.46.0
+        version: 2.46.0
       '@supabase/ssr':
         specifier: ^0.7.0
         version: 0.7.0(@supabase/supabase-js@2.105.4)
