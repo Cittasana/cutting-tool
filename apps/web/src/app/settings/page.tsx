@@ -3,6 +3,7 @@ import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
 import { getSupabaseServerClient } from "@/lib/supabase/server";
 import { setTenantSecret, tenantSecretExists } from "@/lib/secrets";
+import { McpTokensPanel } from "./mcp-tokens";
 
 async function saveAnthropic(formData: FormData) {
   "use server";
@@ -37,6 +38,12 @@ export default async function SettingsPage() {
       anthropicSet: await tenantSecretExists(t.id, "anthropic"),
     })),
   );
+
+  const { data: mcpTokens } = await supabase
+    .from("mcp_tokens")
+    .select("id, name, prefix, scopes, last_used_at, created_at")
+    .is("revoked_at", null)
+    .order("created_at", { ascending: false });
 
   return (
     <main className="mx-auto max-w-2xl px-6 py-12">
@@ -94,6 +101,19 @@ export default async function SettingsPage() {
             </div>
           ))}
         </div>
+      </section>
+
+      <section className="mt-10">
+        <h2 className="text-sm font-medium uppercase tracking-wide text-zinc-500">
+          MCP Access Tokens
+        </h2>
+        <p className="mt-1 mb-4 text-xs text-zinc-500">
+          Per-User Bearer-Tokens für den Cutting-Tool MCP-Server. Konfiguriere in Claude Desktop / Cursor / deinen
+          AIOS-Skills:{" "}
+          <code className="font-mono">https://cutting.cittasana.de/mcp</code> mit{" "}
+          <code className="font-mono">Authorization: Bearer ct_mcp_…</code>
+        </p>
+        <McpTokensPanel tokens={mcpTokens ?? []} />
       </section>
     </main>
   );
