@@ -17,6 +17,8 @@
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.95.0",
+    "@elevenlabs/elevenlabs-js": "^2.46.0",
+    "@higgsfield/client": "^0.2.1",
     "cheerio": "^1.2.0",
     "zod": "^3.25.76"
   },

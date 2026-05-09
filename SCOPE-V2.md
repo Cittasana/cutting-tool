@@ -327,7 +327,7 @@ Bestehende v1-Pipeline nach Vercel migriert:
 
 1. **Datenbank:** ✅ Neues Supabase-Projekt für Cutting-Tool — saubere Trennung von Cittasana OS.
 2. **Phase-Priorität:** ✅ KI-Parität zuerst (Phase 1 → 2 → 3).
-3. **Higgsfield:** ✅ Direct HTTP API — keine CLI-Dependency mehr, `higgsfield.ts` wird neu geschrieben gegen die offizielle API.
+3. **Higgsfield:** ⟳ Revidiert 2026-05-09 nach Research: **CLI-in-Sandbox**. Begründung: das öffentliche `@higgsfield/client` SDK (v0.2.1) exponiert Veo 3.1 Fast und Seedance 2.0 nicht als feste Endpoints — die Modelle leben nur im CLI-Binary mit erweiterten internen Endpoints. Sandbox installiert das CLI per `dnf`/Static-Binary, Auth via `HF_CREDENTIALS` env. SDK wird optional für Upload/Polling/Account verwendet.
 4. **CLI-v1:** ✅ Wird komplett auf Web migriert — v1-CLI wird deprecated, Code-Logik wandert in Vercel-Workflows. Keine doppelte Pflege.
 5. **Pre-Analyse Stack:** Python (scenedetect/whisperx/madmom/mediapipe/katna/color-matcher/colour-science) — keine Node-Äquivalente vorhanden.
 6. **Render-Engine:** Hybrid — ffmpeg für Cuts/Concat/LUT/Mux, Remotion für Captions + Lower-Thirds + komplexe Composition-Layer.
