@@ -24,6 +24,12 @@ export default async function ProjectDetailPage({
     .single();
   if (!project) notFound();
 
+  const { data: igMeta } = await supabase
+    .from("project_secrets")
+    .select("ig_business_account_id, meta_token_expires_at")
+    .eq("project_id", id)
+    .maybeSingle();
+
   const { data: jobs } = await supabase
     .from("jobs")
     .select("id, status, progress, current_step, created_at, finished_at")
@@ -67,6 +73,35 @@ export default async function ProjectDetailPage({
           Keys
         </Link>
       </nav>
+
+      <section className="mb-6 flex items-center justify-between rounded-lg border border-zinc-200 p-4 dark:border-zinc-800">
+        <div>
+          <h2 className="text-sm font-medium uppercase tracking-wide text-zinc-500">
+            Instagram
+          </h2>
+          {igMeta?.ig_business_account_id ? (
+            <p className="mt-1 text-sm">
+              Verbunden ·{" "}
+              <span className="font-mono text-xs text-zinc-500">
+                IG-Account {igMeta.ig_business_account_id}
+              </span>
+              {igMeta.meta_token_expires_at && (
+                <span className="ml-2 text-xs text-zinc-500">
+                  · Token gültig bis {new Date(igMeta.meta_token_expires_at).toLocaleDateString("de-DE")}
+                </span>
+              )}
+            </p>
+          ) : (
+            <p className="mt-1 text-sm text-zinc-500">Noch nicht verbunden.</p>
+          )}
+        </div>
+        <a
+          href={`/api/auth/meta/start?project_id=${id}`}
+          className="rounded-md border border-zinc-300 px-3 py-1.5 text-xs font-medium hover:bg-zinc-100 dark:border-zinc-700 dark:hover:bg-zinc-900"
+        >
+          {igMeta?.ig_business_account_id ? "Reconnect" : "Connect Instagram"}
+        </a>
+      </section>
 
       <section className="mb-8 rounded-lg border border-zinc-200 p-6 dark:border-zinc-800">
         <h2 className="mb-1 text-lg font-medium">Reel generieren</h2>
