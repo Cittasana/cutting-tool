@@ -1,4 +1,6 @@
 import {
+  evaluateFinal,
+  evaluateFootage,
   generateBrief,
   generateStoryboard,
   scrape,
@@ -27,7 +29,11 @@ import {
   normalizeForConcat,
 } from "@/runners/ffmpeg-sandbox";
 import { uploadReelToBlob } from "@/runners/blob";
+import { sampleFramesAsBase64 } from "@/runners/frame-sample";
 import { getActiveBrandPreset } from "@/lib/brand";
+
+const MAX_RETRIES_PER_SCENE = 2;
+const MAX_SCENE_RETRIES_PER_RUN = 4;
 
 export interface RenderReelInput {
   jobId: string;
@@ -210,8 +216,12 @@ async function renderInSandboxStep(
       });
     }
 
+    const apiKey = await resolveAnthropicKey(input.tenantId, input.projectId);
     let prevLastFrame: string | undefined;
     const finalScenePaths: string[] = [];
+    let runRetries = 0;
+
+    const brief = (await getJobBrief(input.jobId)) as MarketingBrief;
 
     for (const scene of storyboard.scenes) {
       const sceneNum = scene.index;
@@ -221,21 +231,65 @@ async function renderInSandboxStep(
       });
       await recordJobEvent(input.jobId, "step.started", { step: `scene-${sceneNum}` });
 
-      const rawPath = `scene-${sceneNum}.raw.mp4`;
-      const { url, jobId } = await generateScene({
-        sandbox,
-        scene,
-        hfCredentials,
-        prevLastFramePath: scene.chain_from_previous ? prevLastFrame : undefined,
-        outputPath: rawPath,
-        brandStyleDescription: brandPreset?.style_description as string | undefined,
-      });
-      await downloadIntoSandbox(sandbox, url, rawPath);
-      await recordJobEvent(input.jobId, "scene.preview", {
-        scene: sceneNum,
-        higgsfield_job: jobId,
-        url,
-      });
+      let rawPath = `scene-${sceneNum}.raw.mp4`;
+      let activePrompt = scene.prompt;
+      let attempt = 0;
+      let scenePassed = false;
+
+      while (attempt <= MAX_RETRIES_PER_SCENE && !scenePassed) {
+        const sceneForGen: Scene = { ...scene, prompt: activePrompt };
+        const { url, jobId } = await generateScene({
+          sandbox,
+          scene: sceneForGen,
+          hfCredentials,
+          prevLastFramePath: scene.chain_from_previous ? prevLastFrame : undefined,
+          outputPath: rawPath,
+          brandStyleDescription: brandPreset?.style_description as string | undefined,
+        });
+        await downloadIntoSandbox(sandbox, url, rawPath);
+        await recordJobEvent(input.jobId, "scene.preview", {
+          scene: sceneNum,
+          attempt: attempt + 1,
+          higgsfield_job: jobId,
+          url,
+        });
+
+        // Vision QC: 3 frames → evaluateFootage
+        const frames = await sampleFramesAsBase64(sandbox, rawPath, `s${sceneNum}-a${attempt + 1}`, 3);
+        const evalReport = await evaluateFootage({
+          apiKey,
+          scene,
+          brief,
+          frameBase64Pngs: frames,
+        });
+        await recordJobEvent(input.jobId, "agent.thought", {
+          step: `scene-${sceneNum}-eval`,
+          attempt: attempt + 1,
+          ...evalReport,
+        });
+
+        if (evalReport.pass) {
+          scenePassed = true;
+          break;
+        }
+
+        attempt++;
+        runRetries++;
+        if (runRetries > MAX_SCENE_RETRIES_PER_RUN) {
+          throw new Error(
+            `Run exceeded MAX_SCENE_RETRIES_PER_RUN (${MAX_SCENE_RETRIES_PER_RUN}). Last scene ${sceneNum} eval: ${JSON.stringify(evalReport)}`,
+          );
+        }
+        const hint = evalReport.prompt_revision_hint ?? "";
+        const negText = evalReport.has_unwanted_text
+          ? " ABSOLUTELY NO ON-SCREEN TEXT, NO CAPTIONS, NO SIGNS, NO LOGOS, NO WATERMARKS. Pure cinematic footage only — any visible writing or graphics is a hard failure."
+          : "";
+        activePrompt = `${scene.prompt}\n\nDirector note: ${hint}${negText}`;
+      }
+
+      if (!scenePassed) {
+        throw new Error(`Scene ${sceneNum} failed after ${MAX_RETRIES_PER_SCENE + 1} attempts.`);
+      }
 
       // Chain frame for next scene
       const lastFrame = `scene-${sceneNum}.last.png`;
@@ -271,8 +325,46 @@ async function renderInSandboxStep(
     await concatDemuxer(sandbox, finalScenePaths, reelPath, ".");
 
     await updateJobStatus(input.jobId, {
+      status: "evaluating",
+      current_step: "final-eval",
+      progress: 92,
+    });
+    // Final QC across the assembled reel
+    const reelFrames = await sampleFramesAsBase64(
+      sandbox,
+      reelPath,
+      "reel",
+      Math.min(8, Math.ceil(storyboard.total_duration_seconds / 4)),
+    );
+    const veoTranscript = storyboard.scenes
+      .filter((s) => !s.uses_native_audio && s.voiceover_text)
+      .map((s) => `[scene ${s.index}] ${s.voiceover_text}`)
+      .join("\n");
+    const finalReport = await evaluateFinal({
+      apiKey,
+      reelFrameBase64Pngs: reelFrames,
+      brief,
+      storyboard,
+      veoVoiceoverTranscript: veoTranscript,
+    });
+    await recordJobEvent(input.jobId, "agent.thought", {
+      step: "final-eval",
+      ...finalReport,
+    });
+    if (!finalReport.pass) {
+      // Don't block ship — surface as warning but continue. Operator
+      // decides whether to repost. (v1 had interactive prompt; v2 keeps
+      // the artifact and lets the user decide.)
+      await recordJobEvent(input.jobId, "error", {
+        step: "final-eval",
+        verdict: finalReport.one_line_verdict,
+        issues: finalReport.issues,
+      });
+    }
+
+    await updateJobStatus(input.jobId, {
       current_step: "upload",
-      progress: 94,
+      progress: 96,
     });
     const buffer = await sandbox.readFileToBuffer({ path: reelPath });
     if (!buffer) throw new Error("readFileToBuffer returned empty");
@@ -282,6 +374,21 @@ async function renderInSandboxStep(
   } finally {
     await handle.stop();
   }
+}
+
+async function getJobBrief(jobId: string): Promise<MarketingBrief> {
+  "use step";
+  const { getSupabaseAdminClient } = await import("@/lib/supabase/admin");
+  const admin = getSupabaseAdminClient();
+  const { data, error } = await admin
+    .from("jobs")
+    .select("brief")
+    .eq("id", jobId)
+    .single();
+  if (error || !data?.brief) {
+    throw new Error(`getJobBrief: ${error?.message ?? "no brief"}`);
+  }
+  return data.brief as MarketingBrief;
 }
 
 async function markDone(jobId: string, reelUrl: string) {
