@@ -36,20 +36,42 @@ export async function muxVoiceover(
 /**
  * Normalize a clip's resolution/fps/codec so concat-demuxer can stream-copy it.
  * AL2023 dnf-ffmpeg uses libx264 (no h264_videotoolbox in sandbox CPU).
+ *
+ * Optionally applies a brand LUT (3D .cube) and color-space normalization
+ * before scaling. The LUT path must be a file already inside the sandbox.
  */
 export async function normalizeForConcat(
   sandbox: Sandbox,
   input: string,
   output: string,
+  opts: { lutPath?: string | null } = {},
 ): Promise<void> {
-  const vf = `scale=${REEL_W}:${REEL_H}:force_original_aspect_ratio=decrease,pad=${REEL_W}:${REEL_H}:(ow-iw)/2:(oh-ih)/2,setsar=1,fps=${REEL_FPS}`;
+  const filters: string[] = [];
+  if (opts.lutPath) {
+    // Defensive normalize input to bt709 limited range, then 3D LUT,
+    // then scale/pad/fps. fast=0 forces proper gamma+primaries handling.
+    filters.push("colorspace=all=bt709:iall=bt709:itrc=bt709:fast=0");
+    filters.push(`lut3d=file=${opts.lutPath}:interp=tetrahedral`);
+  }
+  filters.push(
+    `scale=${REEL_W}:${REEL_H}:force_original_aspect_ratio=decrease`,
+    `pad=${REEL_W}:${REEL_H}:(ow-iw)/2:(oh-ih)/2`,
+    "setsar=1",
+    `fps=${REEL_FPS}`,
+    "format=yuv420p",
+  );
+
   const cmd = await sandbox.runCommand("ffmpeg", [
     "-y",
     "-i", input,
-    "-vf", vf,
+    "-vf", filters.join(","),
     "-c:v", "libx264",
     "-preset", "veryfast",
     "-b:v", REEL_VBITRATE,
+    "-color_primaries", "bt709",
+    "-color_trc", "bt709",
+    "-colorspace", "bt709",
+    "-color_range", "tv",
     "-c:a", "aac",
     "-ar", "48000",
     "-b:a", REEL_ABITRATE,

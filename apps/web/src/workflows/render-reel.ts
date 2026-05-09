@@ -27,6 +27,7 @@ import {
   normalizeForConcat,
 } from "@/runners/ffmpeg-sandbox";
 import { uploadReelToBlob } from "@/runners/blob";
+import { getActiveBrandPreset } from "@/lib/brand";
 
 export interface RenderReelInput {
   jobId: string;
@@ -174,6 +175,9 @@ async function renderInSandboxStep(
   });
 
   const hfCredentials = await resolveHiggsfieldCredentials(input.projectId);
+  const brandPreset = await getActiveBrandPreset(input.projectId);
+  const lutUrl = brandPreset?.lut_storage_path as string | undefined;
+
   const handle = await createRenderSandbox({
     timeoutMinutes: 30,
     vcpus: 4,
@@ -189,6 +193,21 @@ async function renderInSandboxStep(
           content: Buffer.from(vo.base64, "base64"),
         })),
       );
+    }
+
+    // Download brand LUT once (shared across all scenes).
+    let lutPath: string | undefined;
+    if (lutUrl) {
+      lutPath = "brand.cube";
+      const dl = await sandbox.runCommand("curl", ["-fsSL", "-o", lutPath, lutUrl]);
+      if (dl.exitCode !== 0) {
+        const stderr = await dl.stderr();
+        throw new Error(`download brand LUT: ${stderr.slice(0, 400)}`);
+      }
+      await recordJobEvent(input.jobId, "agent.thought", {
+        step: "brand-lut",
+        url: lutUrl,
+      });
     }
 
     let prevLastFrame: string | undefined;
@@ -209,6 +228,7 @@ async function renderInSandboxStep(
         hfCredentials,
         prevLastFramePath: scene.chain_from_previous ? prevLastFrame : undefined,
         outputPath: rawPath,
+        brandStyleDescription: brandPreset?.style_description as string | undefined,
       });
       await downloadIntoSandbox(sandbox, url, rawPath);
       await recordJobEvent(input.jobId, "scene.preview", {
@@ -235,9 +255,9 @@ async function renderInSandboxStep(
         await ensureSilentAudio(sandbox, rawPath, muxedPath);
       }
 
-      // Normalize for concat
+      // Normalize for concat (apply brand LUT if configured)
       const normPath = `scene-${sceneNum}.norm.mp4`;
-      await normalizeForConcat(sandbox, muxedPath, normPath);
+      await normalizeForConcat(sandbox, muxedPath, normPath, { lutPath });
       finalScenePaths.push(normPath);
 
       await recordJobEvent(input.jobId, "step.finished", { step: `scene-${sceneNum}` });

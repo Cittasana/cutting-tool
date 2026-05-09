@@ -47,7 +47,12 @@ export default async function ProjectDetailPage({
         <span className="border-b-2 border-zinc-900 px-3 py-2 text-sm font-medium dark:border-zinc-100">
           Reels
         </span>
-        <span className="px-3 py-2 text-sm text-zinc-400">Brand (Phase 2)</span>
+        <Link
+          href={`/projects/${id}/brand`}
+          className="px-3 py-2 text-sm text-zinc-500 hover:text-zinc-900 dark:hover:text-zinc-100"
+        >
+          Brand
+        </Link>
         <span className="px-3 py-2 text-sm text-zinc-400">Assets (Phase 3)</span>
         <span className="px-3 py-2 text-sm text-zinc-400">Auto-Post (Phase 4)</span>
         <Link
