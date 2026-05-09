@@ -164,15 +164,23 @@ export default async function BrandPage({
         </p>
       </header>
 
-      {preset ? (
-        <p className="mb-6 text-xs text-zinc-500">
-          Aktive Version: <span className="font-mono">v{preset.version}</span> · {preset.name}
-        </p>
-      ) : (
-        <p className="mb-6 text-xs text-amber-700 dark:text-amber-400">
-          Noch kein Preset — wird beim ersten Upload automatisch v1 erstellt.
-        </p>
-      )}
+      <div className="mb-6 flex items-center justify-between">
+        {preset ? (
+          <p className="text-xs text-zinc-500">
+            Aktive Version: <span className="font-mono">v{preset.version}</span> · {preset.name}
+          </p>
+        ) : (
+          <p className="text-xs text-amber-700 dark:text-amber-400">
+            Noch kein Preset — wird beim ersten Upload automatisch v1 erstellt.
+          </p>
+        )}
+        <Link
+          href={`/projects/${id}/brand/library`}
+          className="rounded-md border border-zinc-300 px-3 py-1.5 text-xs font-medium hover:bg-zinc-100 dark:border-zinc-700 dark:hover:bg-zinc-900"
+        >
+          Brand Library →
+        </Link>
+      </div>
 
       <div className="grid gap-4">
         {ASSET_KINDS.map((meta) => {

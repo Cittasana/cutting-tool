@@ -1,0 +1,163 @@
+{
+  "schema_version": 1,
+  "generated_at": "2026-05-09T23:41:30.404Z",
+  "luts": [
+    {
+      "id": "neutral-doc",
+      "name": "Neutral / Documentary",
+      "description": "Minimaler Lift in Schatten, leichte Skin-Wärme, kein dramatischer Color-Cast. Default für 'kenne-meine-Marke-noch-nicht'-Kunden.",
+      "tags": [
+        "natural",
+        "balanced",
+        "documentary"
+      ],
+      "url": "/brand-library/luts/neutral-doc.cube",
+      "palette_hex": [
+        "#e3a88a",
+        "#84b5ec",
+        "#4d8d48",
+        "#918d8a",
+        "#161418"
+      ]
+    },
+    {
+      "id": "warm-editorial",
+      "name": "Warm Editorial",
+      "description": "Warme Highlights, leicht entsättigte Greens, satte Skin-Tones. Lifestyle / Coaching / Solo-Brand.",
+      "tags": [
+        "warm",
+        "lifestyle",
+        "skin-positive"
+      ],
+      "url": "/brand-library/luts/warm-editorial.cube",
+      "palette_hex": [
+        "#f1a97d",
+        "#98b5d5",
+        "#618e41",
+        "#a38f7c",
+        "#221813"
+      ]
+    },
+    {
+      "id": "cool-modern",
+      "name": "Cool Modern",
+      "description": "Kühle Schatten mit Cyan, neutrale Highlights, hoher Mikro-Kontrast. SaaS / Tech / B2B.",
+      "tags": [
+        "cool",
+        "tech",
+        "high-contrast"
+      ],
+      "url": "/brand-library/luts/cool-modern.cube",
+      "palette_hex": [
+        "#d1aba3",
+        "#7bb7f5",
+        "#448a5c",
+        "#828d9e",
+        "#091021"
+      ]
+    },
+    {
+      "id": "filmic-teal-orange",
+      "name": "Filmic Teal-Orange",
+      "description": "Klassischer Hollywood-Look. Cyan in Shadows, Orange in Highlights, ausgeglichene Skin-Tones. Premium / Reise / High-End.",
+      "tags": [
+        "cinematic",
+        "premium",
+        "teal-orange"
+      ],
+      "url": "/brand-library/luts/filmic-teal-orange.cube",
+      "palette_hex": [
+        "#dc9f84",
+        "#82abd3",
+        "#49854e",
+        "#8a8684",
+        "#0c1625"
+      ]
+    },
+    {
+      "id": "punchy-social",
+      "name": "Punchy Social",
+      "description": "Boost Saturation + Contrast für scroll-stopping Reels. Optimiert für TikTok / Instagram-Algorithmus.",
+      "tags": [
+        "high-sat",
+        "social",
+        "punchy"
+      ],
+      "url": "/brand-library/luts/punchy-social.cube",
+      "palette_hex": [
+        "#ffb186",
+        "#72c7ff",
+        "#309930",
+        "#929292",
+        "#010109"
+      ]
+    },
+    {
+      "id": "vintage-faded",
+      "name": "Vintage Faded",
+      "description": "Milchige Schatten, gedämpfte Highlights, leichter Grün-Blau-Stich. Nostalgia / Storytelling / Throwback.",
+      "tags": [
+        "vintage",
+        "faded",
+        "low-contrast"
+      ],
+      "url": "/brand-library/luts/vintage-faded.cube",
+      "palette_hex": [
+        "#c1a496",
+        "#92abca",
+        "#6b8b68",
+        "#918f8f",
+        "#38373b"
+      ]
+    }
+  ],
+  "music_sources": [
+    {
+      "name": "Pixabay Music",
+      "url": "https://pixabay.com/music/",
+      "license": "Pixabay Content License (royalty-free, kommerziell + ohne Attribution erlaubt)",
+      "use_for": "Background-Music in Reels — direkter Download als MP3, dann in /projects/[id]/brand → Background Music hochladen"
+    },
+    {
+      "name": "Mixkit",
+      "url": "https://mixkit.co/free-stock-music/",
+      "license": "Mixkit Free License (royalty-free für content creation, kommerziell ok, keine Attribution erforderlich)",
+      "use_for": "High-quality cinematic + electronic tracks, gut kuratiert nach Mood"
+    },
+    {
+      "name": "YouTube Audio Library",
+      "url": "https://studio.youtube.com/channel/UC/music",
+      "license": "Variiert (manche royalty-free, manche Attribution required) — pro Track prüfen",
+      "use_for": "Direkt aus YouTube Studio downloaden, gefiltert nach Mood + Tempo"
+    },
+    {
+      "name": "Uppbeat",
+      "url": "https://uppbeat.io/",
+      "license": "Free tier mit Attribution; Premium ohne Attribution",
+      "use_for": "Trend-aware Tracks, gut kuratiert für Reels/Shorts"
+    }
+  ],
+  "reference_frame_sources": [
+    {
+      "name": "Unsplash",
+      "url": "https://unsplash.com/",
+      "license": "Unsplash License (free for commercial + personal, kein Attribution required, keine Re-Distribution als Stock)",
+      "use_for": "Brand-Reference-Frames hochladen für Color-Match. Suche nach 'cinematic <vibe>' oder '<aesthetic> photography'"
+    },
+    {
+      "name": "Pexels",
+      "url": "https://www.pexels.com/",
+      "license": "Pexels License (free, kommerziell, ohne Attribution)",
+      "use_for": "Brand-Reference + B-Roll-Inspiration"
+    }
+  ],
+  "fonts_bundled": [
+    {
+      "name": "Inter",
+      "family": "Inter",
+      "url": "/brand-defaults/fonts/Inter-Regular.ttf",
+      "license": "SIL OFL 1.1 (open, kommerziell ok, embed + redistribute erlaubt)",
+      "designer": "Rasmus Andersson"
+    }
+  ]
+}
