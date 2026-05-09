@@ -7,6 +7,7 @@ export interface JobUpdate {
   current_step?: string | null;
   brief?: MarketingBrief | null;
   storyboard?: Storyboard | null;
+  timeline?: unknown;
   output_asset_id?: string | null;
   workflow_run_id?: string | null;
   error?: unknown;
