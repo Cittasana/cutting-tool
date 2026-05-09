@@ -53,7 +53,12 @@ export default async function ProjectDetailPage({
         >
           Brand
         </Link>
-        <span className="px-3 py-2 text-sm text-zinc-400">Assets (Phase 3)</span>
+        <Link
+          href={`/projects/${id}/assets`}
+          className="px-3 py-2 text-sm text-zinc-500 hover:text-zinc-900 dark:hover:text-zinc-100"
+        >
+          Assets
+        </Link>
         <span className="px-3 py-2 text-sm text-zinc-400">Auto-Post (Phase 4)</span>
         <Link
           href={`/projects/${id}/keys`}

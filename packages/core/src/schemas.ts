@@ -281,3 +281,122 @@ export const JobEvent = z.object({
   payload: z.unknown(),
 });
 export type JobEvent = z.infer<typeof JobEvent>;
+
+// ============================================================
+// Cutting Agent (Phase 3) — analyze + compose for uploaded assets
+// ============================================================
+
+export const AssetSceneAnalysis = z.object({
+  start: z.number().min(0),
+  end: z.number().min(0),
+});
+export type AssetSceneAnalysis = z.infer<typeof AssetSceneAnalysis>;
+
+export const AssetAnalysis = z.object({
+  kind: z.enum(["video", "image"]),
+  duration_s: z.number().min(0),
+  width: z.number().int().min(0),
+  height: z.number().int().min(0),
+  fps: z.number().min(0),
+  has_audio: z.boolean(),
+  scenes: z.array(AssetSceneAnalysis).default([]),
+  silence_segments: z
+    .array(z.object({ start: z.number(), end: z.number() }))
+    .default([]),
+  thumbnails: z.array(z.string()).default([]), // sandbox-local paths or blob URLs
+});
+export type AssetAnalysis = z.infer<typeof AssetAnalysis>;
+
+export const SceneTag = z.object({
+  asset_id: z.string().uuid(),
+  scene_id: z.string(), // "<asset_id>_s<index>"
+  start: z.number().min(0),
+  end: z.number().min(0),
+  tags: z.array(z.string()).max(8).default([]),
+  sentiment: z.enum(["high-energy", "calm", "intense", "playful", "neutral"]),
+  is_talking_head: z.boolean(),
+  good_for_reel: z.boolean(),
+  best_moment_s: z.number().nullable().optional(), // offset within scene
+  notes: z.string().max(200).optional(),
+});
+export type SceneTag = z.infer<typeof SceneTag>;
+
+export const TimelineEntry = z.object({
+  t_in: z.number().min(0),                 // position in final reel
+  t_out: z.number().min(0),
+  source: z.string(),                       // asset_id OR "broll_request_<n>" OR "ai_<n>"
+  src_in: z.number().min(0),                // offset within source clip
+  src_out: z.number().min(0),
+  reframe: z
+    .object({
+      mode: z.enum(["center", "subject", "manual"]),
+      anchor_xy: z.tuple([z.number(), z.number()]).optional(),
+      zoom: z.number().min(1).max(2).default(1),
+    })
+    .optional(),
+  transition_in: z
+    .object({
+      type: z.enum(["hard", "fade", "whip_pan", "dip_to_black", "crossfade"]),
+      duration: z.number().min(0).max(1).default(0),
+      snap_to_beat: z.boolean().default(false),
+    })
+    .optional(),
+  transition_out: z
+    .object({
+      type: z.enum(["hard", "fade", "whip_pan", "dip_to_black", "crossfade"]),
+      duration: z.number().min(0).max(1).default(0),
+      snap_to_beat: z.boolean().default(false),
+    })
+    .optional(),
+});
+export type TimelineEntry = z.infer<typeof TimelineEntry>;
+
+export const BrollRequest = z.object({
+  id: z.string(),
+  prompt: z.string().min(40).max(800),
+  duration: z.union([z.literal(4), z.literal(6), z.literal(8)]),
+  vendor: z.literal("higgsfield").default("higgsfield"),
+  model: z.enum(["veo-3.1-fast", "seedance-2.0"]),
+});
+export type BrollRequest = z.infer<typeof BrollRequest>;
+
+export const Caption = z.object({
+  t_in: z.number().min(0),
+  t_out: z.number().min(0),
+  text: z.string().min(1).max(120),
+  style: TextStyle.default("subtitle"),
+  position: TextPosition.default("bottom"),
+});
+export type Caption = z.infer<typeof Caption>;
+
+export const Timeline = z.object({
+  version: z.literal(1).default(1),
+  duration_s: z.union([z.literal(15), z.literal(30), z.literal(60)]),
+  aspect_ratio: z.literal("9:16").default("9:16"),
+  entries: z.array(TimelineEntry).min(1).max(40),
+  captions: z.array(Caption).default([]),
+  broll_requests: z.array(BrollRequest).default([]),
+  music_uri: z.string().url().nullable().optional(),
+});
+export type Timeline = z.infer<typeof Timeline>;
+
+export function validateTimeline(tl: Timeline): string[] {
+  const errors: string[] = [];
+  let cursor = 0;
+  for (const e of tl.entries) {
+    if (Math.abs(e.t_in - cursor) > 0.05) {
+      errors.push(`entry t_in=${e.t_in} doesn't follow previous (expected ~${cursor.toFixed(2)})`);
+    }
+    if (e.t_out <= e.t_in) {
+      errors.push(`entry t_out=${e.t_out} ≤ t_in=${e.t_in}`);
+    }
+    if (e.src_out <= e.src_in) {
+      errors.push(`entry src_out=${e.src_out} ≤ src_in=${e.src_in}`);
+    }
+    cursor = e.t_out;
+  }
+  if (Math.abs(cursor - tl.duration_s) > 1) {
+    errors.push(`timeline ends at ${cursor.toFixed(2)}s, expected ${tl.duration_s}±1s`);
+  }
+  return errors;
+}
