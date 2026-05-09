@@ -52,6 +52,12 @@ const ASSET_KINDS: Array<{
     hint: "1–3 Bilder die den Brand-Look definieren. Wird zu Color-Match + Higgsfield Style-Reference.",
     accept: "image/png,image/jpeg,image/webp",
   },
+  {
+    kind: "music",
+    label: "Background Music",
+    hint: "MP3/WAV/M4A. Wird unter Voice-Over geduckt mit sidechain compressor.",
+    accept: "audio/mpeg,audio/wav,audio/mp4,audio/m4a,audio/x-m4a",
+  },
 ];
 
 const COLUMN_BY_KIND: Record<Exclude<BrandAssetKind, "reference">, string> = {
@@ -60,6 +66,7 @@ const COLUMN_BY_KIND: Record<Exclude<BrandAssetKind, "reference">, string> = {
   logo_dark: "logo_dark_storage_path",
   wordmark: "wordmark_storage_path",
   font: "font_storage_path",
+  music: "music_storage_path",
 };
 
 async function uploadAssetAction(formData: FormData) {

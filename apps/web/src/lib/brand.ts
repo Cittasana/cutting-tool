@@ -8,7 +8,8 @@ export type BrandAssetKind =
   | "logo_dark"
   | "wordmark"
   | "font"
-  | "reference";
+  | "reference"
+  | "music";
 
 export interface BrandPresetUpsert {
   projectId: string;
@@ -18,6 +19,7 @@ export interface BrandPresetUpsert {
   logo_dark_storage_path?: string | null;
   wordmark_storage_path?: string | null;
   font_storage_path?: string | null;
+  music_storage_path?: string | null;
   font_family?: string | null;
   reference_frames?: Array<{ url: string; role: string }> | null;
   default_aspect_ratio?: string;

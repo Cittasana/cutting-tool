@@ -33,6 +33,7 @@ import { sampleFramesAsBase64 } from "@/runners/frame-sample";
 import { applyOverlays } from "@/runners/overlay";
 import { renderTextOverlayPng } from "@/runners/text-render";
 import { pickIconSizePx, resolveFontUrl, resolveIconUrl } from "@/runners/asset-resolve";
+import { mixBackgroundMusic } from "@/runners/ffmpeg-mix";
 import { getActiveBrandPreset } from "@/lib/brand";
 
 const MAX_RETRIES_PER_SCENE = 2;
@@ -346,6 +347,19 @@ async function renderInSandboxStep(
     const reelPath = `reel.mp4`;
     await concatDemuxer(sandbox, finalScenePaths, reelPath, ".");
 
+    // Optional: mix brand BGM with sidechain duck on top of concatenated reel.
+    let preEvalReel = reelPath;
+    const musicUrl = brandPreset?.music_storage_path as string | undefined;
+    if (musicUrl) {
+      const musicLocal = "music.bin";
+      const dl = await sandbox.runCommand("curl", ["-fsSL", "-o", musicLocal, musicUrl]);
+      if (dl.exitCode === 0) {
+        preEvalReel = "reel.mixed.mp4";
+        await mixBackgroundMusic(sandbox, reelPath, musicLocal, preEvalReel);
+        await recordJobEvent(input.jobId, "agent.thought", { step: "bgm-mixed", url: musicUrl });
+      }
+    }
+
     await updateJobStatus(input.jobId, {
       status: "evaluating",
       current_step: "final-eval",
@@ -354,7 +368,7 @@ async function renderInSandboxStep(
     // Final QC across the assembled reel
     const reelFrames = await sampleFramesAsBase64(
       sandbox,
-      reelPath,
+      preEvalReel,
       "reel",
       Math.min(8, Math.ceil(storyboard.total_duration_seconds / 4)),
     );
@@ -388,7 +402,7 @@ async function renderInSandboxStep(
       current_step: "upload",
       progress: 96,
     });
-    const buffer = await sandbox.readFileToBuffer({ path: reelPath });
+    const buffer = await sandbox.readFileToBuffer({ path: preEvalReel });
     if (!buffer) throw new Error("readFileToBuffer returned empty");
 
     const blobUrl = await uploadReelToBlob({ jobId: input.jobId, buffer });

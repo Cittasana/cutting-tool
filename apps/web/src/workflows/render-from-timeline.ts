@@ -19,6 +19,9 @@ import { downloadIntoSandbox, generateScene } from "@/runners/higgsfield";
 import { concatDemuxer, normalizeForConcat } from "@/runners/ffmpeg-sandbox";
 import { trimAndReframe, imageToStillVideo } from "@/runners/ffmpeg-cuts";
 import { uploadReelToBlob } from "@/runners/blob";
+import { mixBackgroundMusic } from "@/runners/ffmpeg-mix";
+import { applyReelCaptions } from "@/runners/captions";
+import { resolveFontUrl } from "@/runners/asset-resolve";
 import { getActiveBrandPreset } from "@/lib/brand";
 
 export interface RenderFromTimelineInput {
@@ -289,16 +292,48 @@ async function renderTimelineStep(
       segmentPaths.push(norm);
     }
 
-    await updateJobStatus(input.jobId, { current_step: "concat", progress: 86 });
-    const reelPath = "reel.mp4";
-    await concatDemuxer(sandbox, segmentPaths, reelPath, ".");
+    await updateJobStatus(input.jobId, { current_step: "concat", progress: 84 });
+    const concatPath = "reel.concat.mp4";
+    await concatDemuxer(sandbox, segmentPaths, concatPath, ".");
 
-    await updateJobStatus(input.jobId, { current_step: "upload", progress: 95 });
-    const buf = await sandbox.readFileToBuffer({ path: reelPath });
+    // Apply Reel-level captions (Timeline.captions) on the concatenated reel.
+    let captionedPath = concatPath;
+    if (timeline.captions.length > 0) {
+      await updateJobStatus(input.jobId, { current_step: "captions", progress: 88 });
+      const fontUrl = resolveFontUrl(brand?.font_storage_path as string | undefined);
+      const fontResp = await fetch(fontUrl);
+      if (fontResp.ok) {
+        const fontBuf = Buffer.from(await fontResp.arrayBuffer());
+        captionedPath = "reel.captions.mp4";
+        await applyReelCaptions({
+          sandbox,
+          input: concatPath,
+          output: captionedPath,
+          captions: timeline.captions,
+          fontBuffer: fontBuf,
+        });
+      }
+    }
+
+    // Optional brand BGM with sidechain duck.
+    let finalReelPath = captionedPath;
+    const musicUrl = brand?.music_storage_path as string | undefined;
+    if (musicUrl) {
+      await updateJobStatus(input.jobId, { current_step: "bgm-mix", progress: 92 });
+      const musicLocal = "music.bin";
+      const dl = await sandbox.runCommand("curl", ["-fsSL", "-o", musicLocal, musicUrl]);
+      if (dl.exitCode === 0) {
+        finalReelPath = "reel.final.mp4";
+        await mixBackgroundMusic(sandbox, captionedPath, musicLocal, finalReelPath);
+      }
+    }
+
+    await updateJobStatus(input.jobId, { current_step: "upload", progress: 96 });
+    const buf = await sandbox.readFileToBuffer({ path: finalReelPath });
     if (!buf) throw new Error("readFileToBuffer empty");
     const blobUrl = await uploadReelToBlob({ jobId: input.jobId, buffer: Buffer.from(buf) });
 
-    void brief; // brief not yet used at render-time (captions in 3.5 follow-up)
+    void brief;
     return blobUrl;
   } finally {
     await handle.stop();
