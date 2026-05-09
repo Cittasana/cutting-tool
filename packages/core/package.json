@@ -7,15 +7,21 @@
   "types": "./src/index.ts",
   "exports": {
     ".": "./src/index.ts",
-    "./schemas": "./src/schemas.ts"
+    "./schemas": "./src/schemas.ts",
+    "./agents/*": "./src/agents/*.ts",
+    "./scraper": "./src/scraper.ts",
+    "./anthropic": "./src/anthropic.ts"
   },
   "scripts": {
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
+    "@anthropic-ai/sdk": "^0.95.0",
+    "cheerio": "^1.2.0",
     "zod": "^3.25.76"
   },
   "devDependencies": {
+    "@types/node": "^24",
     "typescript": "^5.9.0"
   }
 }

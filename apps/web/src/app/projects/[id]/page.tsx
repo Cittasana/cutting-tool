@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { redirect, notFound } from "next/navigation";
 import { getSupabaseServerClient } from "@/lib/supabase/server";
+import { TestBriefForm } from "./test-brief-form";
 
 export default async function ProjectDetailPage({
   params,
@@ -44,8 +45,12 @@ export default async function ProjectDetailPage({
         </Link>
       </nav>
 
-      <section className="rounded-lg border border-dashed border-zinc-300 p-8 text-center text-sm text-zinc-500 dark:border-zinc-700">
-        Reel-Generierung kommt in Phase 1.
+      <section className="rounded-lg border border-zinc-200 p-6 dark:border-zinc-800">
+        <h2 className="mb-1 text-lg font-medium">Reel aus URL (Smoketest)</h2>
+        <p className="mb-4 text-xs text-zinc-500">
+          Phase 1, Etappe 1: Brief + Storyboard. Render-Pipeline (Higgsfield, ffmpeg) folgt.
+        </p>
+        <TestBriefForm projectId={id} />
       </section>
     </main>
   );
