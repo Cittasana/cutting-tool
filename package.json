@@ -1,0 +1,17 @@
+{
+  "name": "cutting-tool",
+  "version": "2.0.0-dev",
+  "private": true,
+  "description": "Multi-tenant Reels-Editor SaaS — Vercel + Supabase + Workflows + Sandbox",
+  "engines": {
+    "node": ">=24",
+    "pnpm": ">=10"
+  },
+  "scripts": {
+    "dev": "pnpm --filter ./apps/web dev",
+    "build": "pnpm --filter ./apps/web build",
+    "typecheck": "pnpm -r typecheck",
+    "lint": "pnpm -r lint"
+  },
+  "packageManager": "pnpm@10.33.0"
+}
