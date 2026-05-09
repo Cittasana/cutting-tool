@@ -53,6 +53,9 @@ importers:
       '@elevenlabs/elevenlabs-js':
         specifier: ^2.46.0
         version: 2.46.0
+      '@resvg/resvg-js':
+        specifier: ^2.6.2
+        version: 2.6.2
       '@supabase/ssr':
         specifier: ^0.7.0
         version: 0.7.0(@supabase/supabase-js@2.105.4)

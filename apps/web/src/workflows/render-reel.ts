@@ -30,6 +30,9 @@ import {
 } from "@/runners/ffmpeg-sandbox";
 import { uploadReelToBlob } from "@/runners/blob";
 import { sampleFramesAsBase64 } from "@/runners/frame-sample";
+import { applyOverlays } from "@/runners/overlay";
+import { renderTextOverlayPng } from "@/runners/text-render";
+import { pickIconSizePx, resolveFontUrl, resolveIconUrl } from "@/runners/asset-resolve";
 import { getActiveBrandPreset } from "@/lib/brand";
 
 const MAX_RETRIES_PER_SCENE = 2;
@@ -216,6 +219,14 @@ async function renderInSandboxStep(
       });
     }
 
+    // Pre-fetch the project font (or platform default) into a Buffer for
+    // @resvg/resvg-js text renders. The font file itself is also staged into
+    // the sandbox in case future steps need it (e.g. ffmpeg drawtext).
+    const fontUrl = resolveFontUrl(brandPreset?.font_storage_path as string | undefined);
+    const fontResp = await fetch(fontUrl);
+    if (!fontResp.ok) throw new Error(`font fetch ${fontUrl}: ${fontResp.status}`);
+    const fontBuffer = Buffer.from(await fontResp.arrayBuffer());
+
     const apiKey = await resolveAnthropicKey(input.tenantId, input.projectId);
     let prevLastFrame: string | undefined;
     const finalScenePaths: string[] = [];
@@ -309,9 +320,20 @@ async function renderInSandboxStep(
         await ensureSilentAudio(sandbox, rawPath, muxedPath);
       }
 
+      // Overlays: text via @resvg/resvg-js (Vercel Function), icons via curl
+      // platform defaults; both staged into sandbox. Filter_complex chain
+      // overlays each with start/end timing.
+      const overlaidPath = await applySceneOverlays(
+        sandbox,
+        scene,
+        muxedPath,
+        brandPreset?.font_storage_path as string | undefined,
+        fontBuffer,
+      );
+
       // Normalize for concat (apply brand LUT if configured)
       const normPath = `scene-${sceneNum}.norm.mp4`;
-      await normalizeForConcat(sandbox, muxedPath, normPath, { lutPath });
+      await normalizeForConcat(sandbox, overlaidPath, normPath, { lutPath });
       finalScenePaths.push(normPath);
 
       await recordJobEvent(input.jobId, "step.finished", { step: `scene-${sceneNum}` });
@@ -374,6 +396,67 @@ async function renderInSandboxStep(
   } finally {
     await handle.stop();
   }
+}
+
+/**
+ * Pre-render text PNGs (Vercel Function side) + curl icon PNGs from
+ * platform defaults (or project assets), stage into sandbox, then run
+ * applyOverlays. Returns the path to the overlaid clip.
+ */
+async function applySceneOverlays(
+  sandbox: Awaited<ReturnType<typeof createRenderSandbox>>["sandbox"],
+  scene: Scene,
+  inputPath: string,
+  _projectFontUrl: string | undefined,
+  fontBuffer: Buffer,
+): Promise<string> {
+  if (scene.overlays.length === 0) return inputPath;
+  const sceneNum = scene.index;
+
+  const textPaths: Record<number, string> = {};
+  const iconPaths: Record<number, string> = {};
+  const writes: Array<{ path: string; content: Buffer }> = [];
+  const iconCurls: Array<{ url: string; path: string }> = [];
+
+  for (let i = 0; i < scene.overlays.length; i++) {
+    const ov = scene.overlays[i]!;
+    if (ov.kind === "text") {
+      const png = await renderTextOverlayPng({ overlay: ov, fontBuffer });
+      const path = `scene-${sceneNum}-text-${i}.png`;
+      writes.push({ path, content: png });
+      textPaths[i] = path;
+    } else {
+      const sizePx = pickIconSizePx(1920, ov.size_pct);
+      const url = resolveIconUrl(ov.name, sizePx);
+      if (!url) {
+        throw new Error(`icon "${ov.name}" not found in defaults`);
+      }
+      const path = `scene-${sceneNum}-icon-${i}.png`;
+      iconCurls.push({ url, path });
+      iconPaths[i] = path;
+    }
+  }
+
+  if (writes.length > 0) {
+    await sandbox.writeFiles(writes);
+  }
+  for (const { url, path } of iconCurls) {
+    const cmd = await sandbox.runCommand("curl", ["-fsSL", "-o", path, url]);
+    if (cmd.exitCode !== 0) {
+      throw new Error(`download icon ${url}: ${(await cmd.stderr()).slice(0, 400)}`);
+    }
+  }
+
+  const out = `scene-${sceneNum}.ovl.mp4`;
+  await applyOverlays({
+    sandbox,
+    input: inputPath,
+    output: out,
+    scene,
+    textOverlayPaths: textPaths,
+    iconOverlayPaths: iconPaths,
+  });
+  return out;
 }
 
 async function getJobBrief(jobId: string): Promise<MarketingBrief> {
